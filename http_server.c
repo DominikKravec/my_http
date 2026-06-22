@@ -12,12 +12,15 @@ void send_404(int connection);
 void try_serve_file(int connection, char *file_name);
 void parse_requested_file(char *request, char *file_name);
 void parse_requested_file_type(char *requested_file, char *type);
+bool string_contains_substring(char *str, char *sub);
+void send_500(int connection);
+
+void handle_connection(int connection);
 
 int main(int argc, char *args[]){
 
     int socket_fd;
     struct sockaddr_in address;
-    char buffer[BUFFER_SIZE];
 
     // 1. Create the socket
     if( (socket_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0 ){
@@ -65,21 +68,17 @@ int main(int argc, char *args[]){
             continue;
         }
 
-        read(connection, buffer, BUFFER_SIZE - 1);
+        int  pid = fork();
 
-        char request_file[101] = { '\0' };
-
-        parse_requested_file(buffer, request_file);
-
-        printf("Requested file: %s\n", request_file);
-
-        if(strcmp(request_file, "") == 0){
-            strcpy(request_file, "index.html");
+        if(pid < 0){
+            send_500(connection);
+            close(connection);
+        }else if(pid == 0){
+            handle_connection(connection);
+        }else{
+            close(connection);
         }
 
-        try_serve_file(connection, request_file);
-
-        close(connection);
     }
  
     close(socket_fd);
@@ -220,4 +219,57 @@ void parse_requested_file_type(char *requested_file, char *type){
         strcpy(type, "ERR");
     }
 
+}
+
+bool string_contains_substring(char *str, char *sub){
+
+    int str_len = strlen(str);
+    int sub_len = strlen(sub);
+
+    // An empty substring is technically always found
+    if (sub_len == 0) return true;
+
+    // We only loop as long as there is enough room left in 'str' for 'sub'
+    for (int i = 0; i <= str_len - sub_len; i++) {
+        bool match = true;
+
+        for (int j = 0; j < sub_len; j++) {
+            if (str[i + j] != sub[j]) {
+                match = false;
+                break; // Mismatch found, break inner loop and try next 'i'
+            }
+        }
+
+        if (match) return true; // We made it through the whole inner loop!
+    }
+
+    return false;
+}
+
+
+void handle_connection(int connection){
+
+    char buffer[BUFFER_SIZE];
+
+    read(connection, buffer, BUFFER_SIZE - 1);
+
+    char request_file[101] = { '\0' };
+
+    parse_requested_file(buffer, request_file);
+
+    printf("Requested file: %s\n", request_file);
+
+    if(strcmp(request_file, "") == 0){
+        strcpy(request_file, "index.html");
+    }
+
+    if(string_contains_substring(request_file, "..")){
+        send_404(connection);
+        close(connection);
+        return;
+    }
+
+    try_serve_file(connection, request_file);
+
+    close(connection);
 }
