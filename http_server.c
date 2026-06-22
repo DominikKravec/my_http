@@ -14,6 +14,7 @@ void parse_requested_file(char *request, char *file_name);
 void parse_requested_file_type(char *requested_file, char *type);
 bool string_contains_substring(char *str, char *sub);
 void send_500(int connection);
+bool save_user(char *user_name);
 
 void handle_connection(int connection);
 
@@ -215,6 +216,30 @@ void parse_requested_file_type(char *requested_file, char *type){
         strcpy(type, "image/png");
     }else if(strcmp(type, ".css") == 0){
         strcpy(type, "text/css");
+    }else if(strcmp(type, ".js") == 0){
+        strcpy(type, "text/javascript");
+    }else if(strcmp(type, ".json") == 0){
+        strcpy(type, "application/json");
+    }else if(strcmp(type, ".jpg") == 0 || strcmp(type, ".jpeg") == 0){
+        strcpy(type, "image/jpeg");
+    }else if(strcmp(type, ".gif") == 0){
+        strcpy(type, "image/gif");
+    }else if(strcmp(type, ".svg") == 0){
+        strcpy(type, "image/svg+xml");
+    }else if(strcmp(type, ".ico") == 0){
+        strcpy(type, "image/x-icon");
+    }else if(strcmp(type, ".webp") == 0){
+        strcpy(type, "image/webp");
+    }else if(strcmp(type, ".txt") == 0){
+        strcpy(type, "text/plain");
+    }else if(strcmp(type, ".pdf") == 0){
+        strcpy(type, "application/pdf");
+    }else if(strcmp(type, ".csv") == 0){
+        strcpy(type, "text/csv");
+    }else if(strcmp(type, ".xml") == 0){
+        strcpy(type, "application/xml");
+    }else if(strcmp(type, ".zip") == 0){
+        strcpy(type, "application/zip");
     }else{
         strcpy(type, "ERR");
     }
@@ -246,30 +271,106 @@ bool string_contains_substring(char *str, char *sub){
     return false;
 }
 
-
 void handle_connection(int connection){
 
     char buffer[BUFFER_SIZE];
 
-    read(connection, buffer, BUFFER_SIZE - 1);
+    int read_bytes = read(connection, buffer, BUFFER_SIZE - 1);
 
-    char request_file[101] = { '\0' };
+    char method[10] = {'\0'};
 
-    parse_requested_file(buffer, request_file);
+    strncpy(method, buffer, strcspn(buffer, " "));
 
-    printf("Requested file: %s\n", request_file);
+    printf("Request with method: %s\n", method);
 
-    if(strcmp(request_file, "") == 0){
-        strcpy(request_file, "index.html");
-    }
+    if(strcmp(method, "GET") == 0){
+        char request_file[101] = { '\0' };
+    
+        parse_requested_file(buffer, request_file);
+    
+        printf("Requested file: %s\n", request_file);
+    
+        if(strcmp(request_file, "") == 0){
+            strcpy(request_file, "index.html");
+        }
+    
+        if(string_contains_substring(request_file, "..")){
+            send_404(connection);
+            close(connection);
+            return;
+        }
+    
+        try_serve_file(connection, request_file);
+    }else if(strcmp(method, "POST") == 0){
 
-    if(string_contains_substring(request_file, "..")){
+        int post_size = atoi(strstr(buffer, "Content-Length: ") + strlen("Content-Length: "));
+
+        char header[1024] = {'\0'};
+
+        strncpy(header, buffer, strstr(buffer, "\r\n\r\n") - buffer);
+
+        char *body = malloc(post_size + 1);
+
+        body[0] = '\0';
+
+        if(body == NULL){
+            send_500(connection);
+            close(connection);
+            return;
+        }
+
+        strcpy( body, strstr(buffer, "\r\n\r\n") + strlen("\r\n\r\n"));
+
+        if(strlen(header) + strlen("\r\n\r\n") + post_size > read_bytes){
+            read(connection, body + strlen(body), strlen(header) + strlen("\r\n\r\n") + post_size - read_bytes);
+        }
+
+        char username[101] = {'\0'};
+
+        parse_username(body, username);
+
+        if(!save_user(username)){
+            send_500(connection);
+            close(connection);
+            return;
+        }
+
+        try_serve_file(connection, "index.html");
+
+        free(body);
+
+    }else{
         send_404(connection);
-        close(connection);
-        return;
     }
-
-    try_serve_file(connection, request_file);
 
     close(connection);
+}
+
+void parse_username(char *body, char *un){
+
+    un[0] = '\0';
+
+    int username_len = strcspn(strstr(body, "username=") + strlen("username="), "\n");
+
+    strncpy(un, (strstr(body, "username=") + strlen("username=")), username_len);
+
+}
+
+bool save_user(char *user_name){
+
+    FILE * user_file;
+
+    if( ( user_file = fopen("../www/users.txt", "a") ) == NULL ){
+        perror("Error opening user file\n");
+        return false;
+    }
+
+    printf("Saving user: %s\n", user_name);
+
+    fprintf(user_file, "%s\n", user_name);
+
+    fclose(user_file);
+
+    return true;
+
 }
